@@ -1,0 +1,97 @@
+#!/bin/sh
+
+# --- Default Values ---
+HOMEDIR_BASE="/Users"
+SHELL="/System/usr/bin/fish"
+DEFAULT_GROUPS="disk lp floppy audio cdrom dialout video netdev games users"
+
+# --- Usage Message ---
+usage() {
+  echo ""
+  echo "fonsOS adduserExtended -  BusyBox call"
+  echo ""
+  echo ""
+  echo "Usage: adduser [OPTIONS] USER [GROUP]"
+  echo ""
+  echo "Create new user, or add USER to GROUP"
+  echo ""
+  echo "        -h DIR              Home directory"
+  echo "        -g GECOS            GECOS field"
+  echo "        -s SHELL            Login shell"
+  echo "        -G GRP              Group"
+  echo "        -S                  Create a system user"
+  echo "        -D                  Don't assign a password"
+  echo "        -H                  Don't create home directory"
+  echo "        -u UID              User id"
+  echo "        -k SKEL             Skeleton directory (/etc/skel)"
+  echo "        --nodefgroups       Don't add user to default groups"
+  echo "        --root              Add user to wheel group"  
+}
+
+# --- Argument Checking ---
+if [ $# -eq 0 ]; then
+  usage
+  exit 1
+fi
+
+USERNAME="$1"
+shift
+
+if ! echo "$USERNAME" | grep -q "^[a-zA-Z0-9][a-zA-Z0-9_-]*$"; then
+  echo "Invalid username: $USERNAME" >&2
+  usage
+  exit 1
+fi
+
+# --- Build Options ---
+OPTIONS=""
+NO_DEFAULT_GROUPS=false
+ADD_TO_WHEEL=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h) OPTIONS="$OPTIONS -h $2"; shift 2;;
+    -g) OPTIONS="$OPTIONS -g $2"; shift 2;;
+    -s) OPTIONS="$OPTIONS -s $2"; shift 2;;
+    -G) OPTIONS="$OPTIONS -G $2"; shift 2;;
+    -S) OPTIONS="$OPTIONS -S"; shift 1;;
+    -D) OPTIONS="$OPTIONS -D"; shift 1;;
+    -H) OPTIONS="$OPTIONS -H"; shift 1;;
+    -u) OPTIONS="$OPTIONS -u $2"; shift 2;;
+    -k) OPTIONS="$OPTIONS -k $2"; shift 2;;
+    --nodefgroups) NO_DEFAULT_GROUPS=true; shift 1;;
+    --root) ADD_TO_WHEEL=true; shift 1;;
+    *) echo "Invalid option: $1" >&2; usage; exit 1;;
+  esac
+done
+
+
+# --- Apply Defaults if Not Overridden ---
+HOMEDIR="$HOMEDIR_BASE/$USERNAME" 
+if ! echo "$OPTIONS" | grep -q " -h "; then 
+    OPTIONS="$OPTIONS -h $HOMEDIR"
+fi
+if ! echo "$OPTIONS" | grep -q " -s "; then 
+    OPTIONS="$OPTIONS -s $SHELL"
+fi
+
+# --- Call busybox adduser ---
+/System/bin/busybox adduser $OPTIONS "$USERNAME" "$@"
+
+# --- Add to Default Groups if Not Disabled ---
+if ! $NO_DEFAULT_GROUPS; then
+  for group in $DEFAULT_GROUPS; do
+    addgroup "$USERNAME" "$group"  # Add to each group individually
+  done
+fi
+
+# --- Add to wheel group if root arg was used ---
+if $ADD_TO_WHEEL; then
+  addgroup "$USERNAME" wheel
+fi
+
+# --- Error Handling ---
+if [ $? -ne 0 ]; then
+  echo "Error creating user $USERNAME" >&2
+  exit 1
+fi
